@@ -1,0 +1,250 @@
+.study-mode {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* 头部 */
+.study-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 16px 20px;
+}
+
+.study-header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.study-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.study-icon {
+  font-size: 24px;
+}
+
+.study-title h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.study-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 6px 12px;
+  border-radius: 20px;
+}
+
+.progress-bar {
+  width: 80px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: white;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.reset-btn, .switch-btn {
+  padding: 8px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.reset-btn:hover, .switch-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* 错误提示 */
+.study-error {
+  background: #ffebee;
+  color: #c62828;
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.study-error button {
+  background: none;
+  border: none;
+  color: #c62828;
+  cursor: pointer;
+}
+
+/* 消息区域 */
+.study-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  background: #f8f9fa;
+}
+
+.study-message {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.study-message.user {
+  flex-direction: row-reverse;
+}
+
+.message-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border: 2px solid #e0e0e0;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.study-message.assistant .message-avatar {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: transparent;
+}
+
+.message-bubble {
+  max-width: 70%;
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.study-message.user .message-bubble {
+  background: #667eea;
+  color: white;
+}
+
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.message-body {
+  line-height: 1.7;
+  font-size: 15px;
+}
+
+.message-text p {
+  margin-bottom: 8px;
+}
+
+.message-text p:last-child {
+  margin-bottom: 0;
+}
+
+/* 输入区域 */
+.study-input-area {
+  background: white;
+  border-top: 1px solid #e0e0e0;
+  padding: 16px 20px;
+}
+
+.study-input-container {
+  display: flex;
+  gap: 12px;
+}
+
+.study-input-container input {
+  flex: 1;
+  padding: 14px 20px;
+  border: 2px solid #e0e0e0;
+  border-radius: 28px;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.study-input-container input:focus {
+  border-color: #667eea;
+}
+
+.study-input-container button {
+  padding: 14px 28px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 28px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.study-input-container button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.study-input-container button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.study-hint {
+  text-align: center;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #999;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .study-header-content {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  
+  .message-bubble {
+    max-width: 85%;
+  }
+}
