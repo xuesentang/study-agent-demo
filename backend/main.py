@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI, AsyncOpenAI
 import os
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import uvicorn
 from study_flow import (
     get_or_create_session, 
@@ -12,10 +12,9 @@ from study_flow import (
     StudyState
 )
 from knowledge_base import get_knowledge_base, init_knowledge_base
-from fastapi import File, UploadFile
-from ocr_service import get_ocr_service
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Any
 from contextlib import asynccontextmanager
+from coze_service import get_coze_service
 
 
 # 加载环境变量
@@ -219,62 +218,6 @@ async def chat(request: ChatRequest):
             detail=f"AI服务调用失败: {str(e)}"
         )
 
-@app.post("/upload/image")
-async def upload_image(file: UploadFile = File(...)):
-    """
-    上传图片并识别文字
-    
-    支持图片中的文字和公式识别
-    """
-    try:
-        # 读取图片数据
-        contents = await file.read()
-        
-        # 检查文件大小（限制10MB）
-        if len(contents) > 10 * 1024 * 1024:
-            raise HTTPException(
-                status_code=400,
-                detail="图片大小超过10MB限制"
-            )
-        
-        # 执行OCR识别
-        ocr = get_ocr_service()
-        result = ocr.recognize_formula(contents)
-        
-        return {
-            "success": True,
-            "filename": file.filename,
-            "recognition": result
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"图片识别失败: {str(e)}"
-        )
-
-@app.post("/upload/base64")
-async def upload_base64(image_base64: str):
-    """
-    上传Base64编码的图片
-    
-    适用于前端直接发送截图等场景
-    """
-    try:
-        ocr = get_ocr_service()
-        result = ocr.recognize_base64(image_base64)
-        
-        return {
-            "success": True,
-            "recognition": result
-        }
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"图片识别失败: {str(e)}"
-        )
-
 @app.get("/models")
 async def list_models():
     """
@@ -407,16 +350,122 @@ async def search_knowledge(query: str, n_results: int = 3):
             detail=f"搜索失败: {str(e)}"
         )
 
+
+# ============ Coze工具调用API（URL版，5个插件） ============
+
+class CozeChatRequest(BaseModel):
+    """Coze对话请求"""
+    message: str = Field(..., description="用户消息（可包含图片/文件URL）")
+    user_id: str = Field(default="default_user", description="用户标识")
+    conversation_id: Optional[str] = Field(default=None, description="会话ID")
+    history: List[Dict[str, str]] = Field(default=[], description="历史消息")
+
+
+class CozeChatResponse(BaseModel):
+    """Coze对话响应"""
+    reply: str = Field(..., description="智能体回复")
+    conversation_id: Optional[str] = Field(default=None, description="会话ID")
+    tool_calls: List[Dict[str, Any]] = Field(default=[], description="工具调用记录")
+    model: str = Field(default="coze", description="模型标识")
+
+
+@app.post("/chat/coze", response_model=CozeChatResponse)
+async def chat_with_coze(request: CozeChatRequest):
+    """
+    使用Coze智能体进行对话（支持工具调用，URL版）
+    
+    基于配置的5个插件：
+    - 联网问答/必应谷歌搜索：搜索概率论资料
+    - 文件读取（URL）：分析文档URL
+    - 图片理解（URL）：分析图片URL
+    - 文档生成：导出学习笔记
+    
+    使用方式：
+    - 普通对话：直接发送文字
+    - 分析图片：发送消息包含图片URL，如"分析这张图片：https://example.com/image.jpg"
+    - 分析文件：发送消息包含文件URL，如"分析这个文档：https://example.com/doc.pdf"
+    """
+    try:
+        coze_service = get_coze_service()
+        
+        result = await coze_service.chat(
+            message=request.message,
+            user_id=request.user_id,
+            conversation_id=request.conversation_id,
+            history=request.history
+        )
+        
+        return CozeChatResponse(
+            reply=result.content,
+            conversation_id=result.conversation_id,
+            tool_calls=result.tool_calls,
+            model="coze"
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Coze调用失败: {str(e)}"
+        )
+
+
+@app.post("/coze/conversation/create")
+async def create_coze_conversation(user_id: str = "default_user"):
+    """创建Coze会话"""
+    try:
+        coze_service = get_coze_service()
+        conversation_id = await coze_service.create_conversation(user_id)
+        
+        return {
+            "conversation_id": conversation_id,
+            "user_id": user_id,
+            "message": "会话创建成功"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"创建会话失败: {str(e)}"
+        )
+
+
+@app.get("/coze/config")
+async def get_coze_config():
+    """获取Coze配置信息（调试用）"""
+    bot_id = os.getenv("COZE_BOT_ID", "未配置")
+    
+    return {
+        "bot_id": bot_id,
+        "status": "configured" if bot_id != "未配置" else "not_configured",
+        "message": "Coze服务已集成" if bot_id != "未配置" else "请在.env中配置COZE_BOT_ID",
+        "features": [
+            "chat",
+            "image_understanding_url",
+            "file_reading_url",
+            "web_search",
+            "document_generation"
+        ],
+        "plugins": [
+            "联网问答",
+            "必应谷歌搜索",
+            "文件读取（URL）",
+            "图片理解（URL）",
+            "文档生成"
+        ],
+        "note": "图片和文件通过URL方式处理，无需上传功能"
+    }
+
+
 # 启动入口
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     host = os.getenv("HOST", "0.0.0.0")
     debug = os.getenv("DEBUG", "false").lower() == "true"
     
-    print(f"🚀 启动概率论与数理统计备考Agent后端服务...")
-    print(f"📍 服务地址: http://{host}:{port}")
-    print(f"📚 API文档: http://{host}:{port}/docs")
-    print(f"🔧 调试模式: {debug}")
+    print("启动概率论与数理统计备考Agent后端服务...")
+    print(f"服务地址: http://{host}:{port}")
+    print(f"API文档: http://{host}:{port}/docs")
+    print(f"调试模式: {debug}")
     
     uvicorn.run(
         "main:app",

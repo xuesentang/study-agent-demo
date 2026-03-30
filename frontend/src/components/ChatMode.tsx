@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { chatAPI } from '../services/api';
-import type { Message } from '../types';
+import { chatAPI, cozeAPI } from '../services/api';
+import type { Message, CozeConfig } from '../types';
 import '../App.css';
 
 interface ChatModeProps {
@@ -16,9 +16,29 @@ function ChatMode({ sessionId, onSwitchMode }: ChatModeProps) {
   const [error, setError] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState('qwen-max');
   
+  // Coze相关状态
+  const [useCoze, setUseCoze] = useState(true);
+  const [cozeConversationId, setCozeConversationId] = useState<string | undefined>();
+  const [cozeConfig, setCozeConfig] = useState<CozeConfig | null>(null);
+  const [urlInput, setUrlInput] = useState('');
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [urlType, setUrlType] = useState<'image' | 'file'>('image');
+  
   // 滚动到底部
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  // 组件挂载时获取Coze配置
+  useEffect(() => {
+    cozeAPI.getConfig().then(config => {
+      setCozeConfig(config);
+      if (config.status === 'not_configured') {
+        setUseCoze(false);
+      }
+    }).catch(() => {
+      setUseCoze(false);
+    });
+  }, []);
   
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -70,21 +90,61 @@ function ChatMode({ sessionId, onSwitchMode }: ChatModeProps) {
     setMessages(prev => [...prev, loadingMessage]);
     
     try {
-      // 调用API
-      const response = await chatAPI.sendMessage(trimmedInput, selectedModel);
+      let response;
       
-      // 更新AI消息
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === loadingMessage.id
-            ? {
-                ...msg,
-                content: response.reply,
-                isLoading: false
-              }
-            : msg
-        )
-      );
+      if (useCoze && cozeConfig?.status === 'configured') {
+        // 使用Coze（自动调用插件）
+        response = await cozeAPI.sendMessage(
+          trimmedInput,
+          sessionId,
+          cozeConversationId,
+          messages
+        );
+        
+        if (response.conversation_id) {
+          setCozeConversationId(response.conversation_id);
+        }
+        
+        // 构建回复内容
+        let content = response.reply;
+        
+        // 如果有工具调用，添加提示
+        if (response.tool_calls && response.tool_calls.length > 0) {
+          content += '\n\n---\n**使用的插件：**\n';
+          response.tool_calls.forEach((call, index) => {
+            content += `\n${index + 1}. ${call.tool} ✅`;
+          });
+        }
+        
+        // 更新AI消息
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === loadingMessage.id
+              ? {
+                  ...msg,
+                  content: content,
+                  isLoading: false
+                }
+              : msg
+          )
+        );
+      } else {
+        // 使用原有OpenAI方式
+        response = await chatAPI.sendMessage(trimmedInput, selectedModel);
+        
+        // 更新AI消息
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === loadingMessage.id
+              ? {
+                  ...msg,
+                  content: response.reply,
+                  isLoading: false
+                }
+              : msg
+          )
+        );
+      }
     } catch (err) {
       // 处理错误
       const errorMessage = err instanceof Error ? err.message : '发生未知错误';
@@ -120,6 +180,103 @@ function ChatMode({ sessionId, onSwitchMode }: ChatModeProps) {
     if (confirm('确定要清空所有对话吗？')) {
       setMessages([]);
       setError(null);
+      setCozeConversationId(undefined);
+    }
+  };
+
+  // 处理URL分析（图片或文件）
+  const handleUrlAnalysis = async () => {
+    if (!urlInput.trim()) {
+      setError('请输入URL');
+      return;
+    }
+
+    if (cozeConfig?.status !== 'configured') {
+      setError('Coze未配置，无法使用URL分析功能');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    const typeLabel = urlType === 'image' ? '图片' : '文件';
+    const userMessage: Message = {
+      id: generateId(),
+      role: 'user',
+      content: `[${typeLabel}URL] ${urlInput}`,
+      timestamp: Date.now()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+
+    const loadingMessage: Message = {
+      id: generateId(),
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      isLoading: true
+    };
+
+    setMessages(prev => [...prev, loadingMessage]);
+
+    try {
+      let response;
+
+      if (urlType === 'image') {
+        response = await cozeAPI.analyzeImageUrl(
+          urlInput,
+          '分析这张图片',
+          sessionId,
+          cozeConversationId
+        );
+      } else {
+        response = await cozeAPI.analyzeFileUrl(
+          urlInput,
+          '分析这个文档',
+          sessionId,
+          cozeConversationId
+        );
+      }
+
+      if (response.conversation_id) {
+        setCozeConversationId(response.conversation_id);
+      }
+
+      // 构建回复内容
+      let content = response.reply;
+
+      // 如果有工具调用，添加提示
+      if (response.tool_calls && response.tool_calls.length > 0) {
+        content += '\n\n---\n**使用的插件：**\n';
+        response.tool_calls.forEach((call, index) => {
+          content += `\n${index + 1}. ${call.tool} ✅`;
+        });
+      }
+
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === loadingMessage.id
+            ? { ...msg, content: content, isLoading: false }
+            : msg
+        )
+      );
+
+      // 清空URL输入
+      setUrlInput('');
+      setShowUrlInput(false);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'URL分析失败';
+      setError(errorMessage);
+
+      setMessages(prev =>
+        prev.map(msg =>
+          msg.id === loadingMessage.id
+            ? { ...msg, content: `❌ ${errorMessage}`, isLoading: false }
+            : msg
+        )
+      );
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -142,8 +299,20 @@ function ChatMode({ sessionId, onSwitchMode }: ChatModeProps) {
           </div>
           
           <div className="header-controls">
+            {/* Coze开关 */}
+            {cozeConfig?.status === 'configured' && (
+              <label className="coze-toggle" title="使用Coze智能体（5个插件）">
+                <input
+                  type="checkbox"
+                  checked={useCoze}
+                  onChange={(e) => setUseCoze(e.target.checked)}
+                />
+                <span>🤖 Coze</span>
+              </label>
+            )}
+
             {/* 模型选择 */}
-            <select 
+            <select
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
               className="model-select"
@@ -153,18 +322,18 @@ function ChatMode({ sessionId, onSwitchMode }: ChatModeProps) {
               <option value="qwen-turbo">Qwen Turbo</option>
               <option value="qwen-plus">Qwen Plus</option>
             </select>
-            
+
             {/* 清空按钮 */}
-            <button 
+            <button
               onClick={handleClearChat}
               className="clear-btn"
               disabled={messages.length === 0 || isLoading}
             >
               🗑️ 清空
             </button>
-            
+
             {/* 切换到学习模式按钮 */}
-            <button 
+            <button
               onClick={onSwitchMode}
               className="switch-btn"
               disabled={isLoading}
@@ -240,9 +409,48 @@ function ChatMode({ sessionId, onSwitchMode }: ChatModeProps) {
         )}
       </main>
 
+      {/* URL输入框（条件显示） */}
+      {showUrlInput && (
+        <div className="url-input-container">
+          <select
+            value={urlType}
+            onChange={(e) => setUrlType(e.target.value as 'image' | 'file')}
+            className="url-type-select"
+          >
+            <option value="image">📷 图片</option>
+            <option value="file">📄 文件</option>
+          </select>
+          <input
+            type="text"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            placeholder={`请输入${urlType === 'image' ? '图片' : '文件'}URL...`}
+            className="url-input"
+            disabled={isLoading}
+          />
+          <button
+            onClick={handleUrlAnalysis}
+            disabled={isLoading || !urlInput.trim()}
+            className="url-submit-btn"
+          >
+            分析
+          </button>
+        </div>
+      )}
+
       {/* 输入区域 */}
       <footer className="input-area">
         <div className="input-container">
+          {/* URL分析按钮 */}
+          <button
+            className="url-analysis-btn"
+            onClick={() => setShowUrlInput(!showUrlInput)}
+            disabled={!useCoze || isLoading}
+            title="分析图片/文件URL"
+          >
+            🔗
+          </button>
+
           <input
             ref={inputRef}
             type="text"

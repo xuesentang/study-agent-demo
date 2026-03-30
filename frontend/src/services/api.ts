@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios';
-import type { ChatRequest, ChatResponse, StudyRequest, StudyResponse, ProgressResponse } from '../types';
+import type { ChatRequest, ChatResponse, StudyRequest, StudyResponse, ProgressResponse, Message, CozeChatRequest, CozeChatResponse, CozeConfig } from '../types';
 
 // 创建 axios 实例
 const api = axios.create({
@@ -92,6 +92,77 @@ export const studyAPI = {
   // 重置学习进度
   async resetProgress(sessionId: string): Promise<{ message: string; session_id: string }> {
     const response = await api.delete(`/study/${sessionId}`);
+    return response.data;
+  }
+};
+
+// ========== Coze API（URL版，5个插件） ==========
+
+export const cozeAPI = {
+  /**
+   * 使用Coze进行对话（支持工具调用，URL版）
+   * 自动触发插件：联网问答、必应谷歌搜索、文档生成
+   * 当消息包含URL时，自动触发：文件读取、图片理解
+   */
+  async sendMessage(
+    message: string,
+    userId: string = 'default_user',
+    conversationId?: string,
+    history: Message[] = []
+  ): Promise<CozeChatResponse> {
+    const request: CozeChatRequest = {
+      message,
+      user_id: userId,
+      conversation_id: conversationId,
+      history
+    };
+    const response = await api.post<CozeChatResponse>('/chat/coze', request);
+    return response.data;
+  },
+
+  /**
+   * 分析图片URL（使用「图片理解」插件）
+   * 将图片URL包含在消息中发送
+   */
+  async analyzeImageUrl(
+    imageUrl: string,
+    question: string = '分析这张图片',
+    userId: string = 'default_user',
+    conversationId?: string
+  ): Promise<CozeChatResponse> {
+    const message = `${question}：${imageUrl}`;
+    return this.sendMessage(message, userId, conversationId);
+  },
+
+  /**
+   * 分析文件URL（使用「文件读取」插件）
+   * 将文件URL包含在消息中发送
+   */
+  async analyzeFileUrl(
+    fileUrl: string,
+    question: string = '分析这个文档',
+    userId: string = 'default_user',
+    conversationId?: string
+  ): Promise<CozeChatResponse> {
+    const message = `${question}：${fileUrl}`;
+    return this.sendMessage(message, userId, conversationId);
+  },
+
+  /**
+   * 创建新会话
+   */
+  async createConversation(userId: string = 'default_user'): Promise<{ conversation_id: string }> {
+    const response = await api.post('/coze/conversation/create', null, {
+      params: { user_id: userId }
+    });
+    return response.data;
+  },
+
+  /**
+   * 获取Coze配置
+   */
+  async getConfig(): Promise<CozeConfig> {
+    const response = await api.get('/coze/config');
     return response.data;
   }
 };

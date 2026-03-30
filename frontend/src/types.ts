@@ -94,3 +94,34 @@ export interface ProgressResponse {
 
 // 应用模式
 export type AppMode = 'chat' | 'study';
+
+// ========== Coze工具调用类型（URL版，5个插件） ==========
+
+/** Coze对话请求 */
+export interface CozeChatRequest {
+  message: string;
+  user_id?: string;
+  conversation_id?: string;
+  history?: Message[];
+}
+
+/** Coze对话响应 */
+export interface CozeChatResponse {
+  reply: string;
+  conversation_id?: string;
+  tool_calls: Array<{
+    tool: string;
+    content: string;
+  }>;
+  model: string;
+}
+
+/** Coze配置信息 */
+export interface CozeConfig {
+  bot_id: string;
+  status: 'configured' | 'not_configured';
+  message: string;
+  features: string[];
+  plugins: string[];
+  note?: string;
+}
